@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+
+clean.md
+clean.json
+opencode-clean.md
+*.tmp
