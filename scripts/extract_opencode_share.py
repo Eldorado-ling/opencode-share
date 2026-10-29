@@ -79,11 +79,18 @@ def decode_js_string(raw: str) -> str:
 
 
 def fix_mojibake(text: str) -> str:
+    """Repair UTF-8 bytes that were decoded as Latin-1, without losing text.
+
+    The repair is attempted on the whole string and only when it is lossless:
+    the text must be encodable as Latin-1 and the resulting bytes must decode
+    as UTF-8. If either step fails, the original text is returned unchanged
+    instead of dropping the characters that could not be re-encoded.
+    """
     if not re.search(r"[\u00c0-\u00ff]", text):
         return text
     try:
-        fixed = text.encode("latin-1", errors="ignore").decode("utf-8", errors="replace")
-    except Exception:
+        fixed = text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
         return text
     if re.search(r"[\u4e00-\u9fff]", fixed) and fixed.count("\ufffd") <= text.count("\ufffd"):
         return fixed
