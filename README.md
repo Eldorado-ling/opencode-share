@@ -53,6 +53,16 @@ With JSON output:
 python .\scripts\extract_opencode_share.py "https://opncd.ai/share/SHARE_ID" --out clean.md --json-out clean.json
 ```
 
+## Unicode handling
+
+Share pages sometimes contain UTF-8 bytes that were decoded as Latin-1
+("mojibake"). The parser repairs that on a best-effort basis, and only when
+the whole string can be converted back without losing characters. Text that
+mixes mojibake with characters outside Latin-1 (emoji, other scripts,
+combining marks) is left exactly as supplied instead of being repaired
+partially, because a partial repair would silently delete the characters it
+cannot re-encode.
+
 ## Output
 
 The Markdown output contains:
@@ -109,6 +119,14 @@ The JSON output contains:
 - `2`: URL fetch or local file read failed
 - `3`: no OpenCode share data was found
 - `4`: share data existed, but no visible transcript text was extracted
+
+## Tests
+
+The test suite uses only the standard library:
+
+```powershell
+python -m unittest discover -s tests -v
+```
 
 ## Multi-agent installation
 
