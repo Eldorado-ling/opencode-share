@@ -1,0 +1,101 @@
+{
+  "info": {
+    "id": "ses_synthetic_fixture",
+    "projectID": "global",
+    "title": "Synthetic fixture",
+    "cost": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    },
+    "time": {
+      "created": 1,
+      "updated": 5
+    },
+    "location": {
+      "directory": "/synthetic/project"
+    }
+  },
+  "messages": [
+    {
+      "id": "msg_zfirst",
+      "type": "user",
+      "text": "Please summarize this synthetic conversation.",
+      "time": {
+        "created": 1
+      }
+    },
+    {
+      "id": "msg_bsystem",
+      "type": "system",
+      "text": "SYNTHETIC_SYSTEM_CONTEXT",
+      "time": {
+        "created": 2
+      }
+    },
+    {
+      "id": "msg_aanswer",
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "providerID": "synthetic",
+        "id": "fixture"
+      },
+      "time": {
+        "created": 3,
+        "completed": 4
+      },
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "SYNTHETIC_REASONING"
+        },
+        {
+          "type": "text",
+          "text": "First visible answer block."
+        },
+        {
+          "type": "tool",
+          "id": "call_synthetic",
+          "name": "example_read",
+          "time": {
+            "created": 3,
+            "ran": 3,
+            "completed": 4
+          },
+          "state": {
+            "status": "completed",
+            "input": {
+              "filePath": "/synthetic/project/example.txt"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "SYNTHETIC_TOOL_OUTPUT"
+              }
+            ]
+          }
+        },
+        {
+          "type": "text",
+          "text": "Second visible answer block."
+        }
+      ]
+    },
+    {
+      "id": "msg_ccompaction",
+      "type": "compaction",
+      "status": "completed",
+      "reason": "manual",
+      "summary": "SYNTHETIC_COMPACTION",
+      "time": {
+        "created": 5
+      }
+    }
+  ]
+}
