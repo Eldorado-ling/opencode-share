@@ -11,6 +11,7 @@ import re
 import sys
 import urllib.request
 import urllib.error
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -195,28 +196,191 @@ def extract_roles(page: str) -> dict[str, str]:
     return roles
 
 
+#: A double quoted JavaScript string, including its backslash escapes.
+_JS_STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"', re.S)
+
+#: Characters that can change the nesting level of a serialized array.
+_JS_STRUCT_RE = re.compile(r'["\[\]{}]')
+
+#: The start of a string, or the reference to a message parts array.
+_SCAN_EVENT_RE = re.compile(r'"|msg_(?P<suffix>[A-Za-z0-9]+):\$R\[\d+\]=\[')
+
+#: A visible text part inside a parts array.
+_TEXT_PART_RE = re.compile(r'type:"text",text:"((?:\\.|[^"\\])*)"')
+
+#: The closing bracket that belongs to each opening bracket.
+_BRACKET_PAIRS = {"[": "]", "{": "}"}
+
+#: The characters that may precede a message key.
+_KEY_CONTEXTS = ("", "{", ",")
+
+
+#: The characters that may precede the markup of a saved page.
+_MARKUP_PADDING = "\ufeff \t\r\n\f\v"
+
+
+class _ScriptCollector(HTMLParser):
+    """Collect the contents of the script elements of a page."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.scripts: list[str] = []
+        self._current: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "script" and self._current is None:
+            self._current = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script" and self._current is not None:
+            self.scripts.append("".join(self._current))
+            self._current = None
+
+    def handle_data(self, data: str) -> None:
+        if self._current is not None:
+            self._current.append(data)
+
+
+def _is_markup_document(page: str) -> bool:
+    """Return whether the input starts like a markup document.
+
+    A saved page may start with whitespace or a UTF-8 BOM before its markup,
+    so both are skipped before the check. Input that does not start like
+    markup is a raw serialized fragment, even when its quoted text contains
+    script tags.
+    """
+    return page.lstrip(_MARKUP_PADDING).startswith("<")
+
+
+def _script_blocks(page: str) -> list[str]:
+    """Return the contents of the script elements of the page, in page order."""
+    collector = _ScriptCollector()
+    collector.feed(page)
+    collector.close()
+    return collector.scripts
+
+
+def _payload_fragments(page: str) -> list[str]:
+    """Return the parts of the page that can hold the serialized share data.
+
+    A markup document is read through its script elements, because the
+    JavaScript of a saved share page lives there. Every script element stays a
+    separate fragment, so an unrelated script cannot swallow the payload of
+    another one, and text outside the script elements is never read as
+    JavaScript. A markup document without script elements has no script data,
+    so it is read as a raw fragment as well.
+
+    Input that does not start like markup is a raw serialized fragment and is
+    read as it is, even when its quoted text contains script tags.
+    """
+    if not _is_markup_document(page):
+        return [page]
+    scripts = _script_blocks(page)
+    if scripts:
+        return scripts
+    return [page]
+
+
+def _skip_js_string(fragment: str, index: int) -> int | None:
+    """Return the index just after the string that starts at ``index``.
+
+    ``None`` is returned when the string is never closed.
+    """
+    match = _JS_STRING_RE.match(fragment, index)
+    if match is None:
+        return None
+    return match.end()
+
+
+def _scan_array_end(fragment: str, open_index: int) -> int | None:
+    """Return the index of the bracket that closes the array at ``open_index``.
+
+    Nested brackets, nested references and quoted strings are respected, so a
+    bracket inside a string value never ends the array early. ``None`` is
+    returned when the array is never closed.
+    """
+    stack = [fragment[open_index]]
+    position = open_index + 1
+    while True:
+        token = _JS_STRUCT_RE.search(fragment, position)
+        if token is None:
+            return None
+        char = token.group(0)
+        if char == '"':
+            end = _skip_js_string(fragment, token.start())
+            if end is None:
+                return None
+            position = end
+            continue
+        position = token.end()
+        if char in _BRACKET_PAIRS:
+            stack.append(char)
+            continue
+        opener = stack.pop()
+        if _BRACKET_PAIRS[opener] != char:
+            return None
+        if not stack:
+            return token.start()
+
+
+def _find_parts_arrays(fragment: str) -> list[tuple[str, int, int]]:
+    """Locate the parts array of every message in a serialized fragment.
+
+    The fragment is scanned as the serialized payload it is: double quoted
+    strings are skipped as a whole, so their content is never read as
+    structure and a message key inside a quoted string is not a message.
+
+    Every result is a ``(message id, first index inside the array, index of
+    the closing bracket)`` triple. Only arrays whose end can be determined are
+    reported: an array that is never closed must not produce a partial text
+    block, and the parser must not borrow the text of a later message.
+    """
+    found: list[tuple[str, int, int]] = []
+    position = 0
+    length = len(fragment)
+    while position < length:
+        event = _SCAN_EVENT_RE.search(fragment, position)
+        if event is None:
+            break
+        if event.group(0) == '"':
+            end = _skip_js_string(fragment, event.start())
+            if end is None:
+                break
+            position = end
+            continue
+        start = event.start()
+        previous = fragment[start - 1] if start else ""
+        if previous not in _KEY_CONTEXTS:
+            # Not written as an object key, so not a message key.
+            position = event.end()
+            continue
+        open_index = event.end() - 1
+        close_index = _scan_array_end(fragment, open_index)
+        if close_index is None:
+            break
+        found.append(("msg_" + event.group("suffix"), open_index + 1, close_index))
+        position = close_index + 1
+    return found
+
+
 def extract_text_parts(page: str) -> dict[str, str]:
+    """Read the visible text of every message from its own parts array.
+
+    The end of a parts array is found by scanning the serialized data of the
+    page, so the text of a message is read from that array only. It is never
+    cut off at a fixed character count, and data that follows the array is
+    not collected.
+    """
     parts: dict[str, str] = {}
-    key_pattern = re.compile(r"(?:^|[,{])(msg_[A-Za-z0-9]+):\$R\[\d+\]=\[")
-    positions = [(m.group(1), m.start()) for m in key_pattern.finditer(page)]
-    model_pos = page.find("},model:")
-
-    for index, (msg_id, start) in enumerate(positions):
-        if index + 1 < len(positions):
-            end = positions[index + 1][1]
-        elif model_pos > start:
-            end = model_pos
-        else:
-            end = min(len(page), start + 200000)
-
-        chunk = page[start:end]
-        texts: list[str] = []
-        for text_match in re.finditer(r'type:"text",text:"((?:\\.|[^"\\])*)"', chunk):
-            value = clean_text(decode_js_string(text_match.group(1)))
-            if value:
-                texts.append(value)
-        if texts:
-            parts[msg_id] = "\n".join(texts)
+    for fragment in _payload_fragments(page):
+        for msg_id, body_start, body_end in _find_parts_arrays(fragment):
+            texts: list[str] = []
+            for text_match in _TEXT_PART_RE.finditer(fragment[body_start:body_end]):
+                value = clean_text(decode_js_string(text_match.group(1)))
+                if value:
+                    texts.append(value)
+            if texts:
+                parts[msg_id] = "\n".join(texts)
     return parts
 
 
