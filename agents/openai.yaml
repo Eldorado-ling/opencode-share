@@ -1,4 +1,4 @@
 interface:
   display_name: "OpenCode Share"
-  short_description: "Extract and summarize OpenCode share sessions."
-  default_prompt: "Analyze this OpenCode share session link and return the clean user/assistant conversation plus a concise summary."
+  short_description: "Parse saved legacy OpenCode share HTML."
+  default_prompt: "Analyze this saved OpenCode share HTML file and return the visible user/assistant conversation plus a concise summary."
