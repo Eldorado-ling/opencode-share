@@ -1,11 +1,19 @@
 ---
 name: opencode-share
-description: Extract, clean, and summarize the transcript from a saved OpenCode share page (legacy saved-HTML extractor). Use when the user provides a saved OpenCode share page file and wants the meaningful conversation, user inputs, assistant outputs, session metadata, task handoff context, or a concise summary without tool-call noise, internal state, paths, or reasoning artifacts. Official OpenCode sharing is discontinued, so this works on saved share HTML only.
+description: Extract, clean, and summarize the conversation from an OpenCode session export (the JSON file written by `opencode session export`) or from a saved OpenCode share page (legacy HTML). Use when the user provides an OpenCode session export or a saved share page and wants the meaningful conversation, user inputs, assistant outputs, task handoff context, or a concise summary with tool noise, internal records, session metadata and reasoning blocks omitted. Official OpenCode sharing is discontinued, so the current route is a local JSON export.
 ---
 
-# OpenCode Share (legacy saved-HTML extractor)
+# OpenCode Share
 
 ## Status
+
+There are two input routes. Use the first one unless the user hands you a
+saved share page.
+
+1. **Native session export (JSON)** — the current route. OpenCode v2.2.1
+   writes a session to a local JSON file with `opencode session export`.
+2. **Saved share page (HTML)** — the legacy route, kept for pages that were
+   archived before sharing was discontinued.
 
 Official OpenCode sharing no longer works:
 
@@ -15,53 +23,112 @@ Official OpenCode sharing no longer works:
   v1.19.1 (2026-10-15): official sharing and existing share links are
   unavailable.
 
-Work from a saved share page file. Share URL examples are kept as historical
-compatibility only, and a defunct link should not be retried.
-
-OpenCode v2.2.1 can export a session locally instead. `opencode session
-export --help` lists a JSON export and a `--sanitize` option, but this parser
-does not accept that JSON format yet. Nothing here migrates that format or
-redacts content for you.
-
 ## Workflow
 
-Use the bundled parser first. Do not manually inspect the page unless the parser fails or the user needs debugging details.
+### Route 1: native session export (JSON)
 
-From a saved share page:
+Start from the local export file the user provided. If no file is available,
+explain the export command below. Export a session only when the user has
+authorized the specific session and source; do not guess a session, enumerate
+private histories or search home directories for them. Existing user
+authorization takes precedence over asking for another confirmation.
+
+```powershell
+opencode session export SESSION_ID | Set-Content -Encoding utf8 session.json
+```
+
+Then convert it:
+
+```powershell
+python "$env:USERPROFILE\.codex\skills\opencode-share\scripts\extract_opencode_export.py" ".\session.json" --out ".\opencode-clean.md"
+```
+
+Add `--json-out ".\opencode-clean.json"` when the normalized JSON is useful.
+Without `--out`, the Markdown transcript goes to stdout as UTF-8.
+
+Normalized JSON is a filtered view, not an `opencode session import` input.
+Keep the original export for reimporting.
+
+The bundled synthetic example shows the whole route without touching a real
+session. It is a small file with four messages, shaped like a native v2.2.1
+export:
+
+```powershell
+python "$env:USERPROFILE\.codex\skills\opencode-share\scripts\extract_opencode_export.py" "$env:USERPROFILE\.codex\skills\opencode-share\examples\opencode-v2.synthetic.json"
+```
+
+The converter reads the export of OpenCode v2.2.1: the root must have an
+`info` object and a `messages` array. The array order is authoritative, so
+the conversation follows the exported order, not the message identifiers. The
+pinned upstream schema sources are
+[session-transfer.ts](https://github.com/anomalyco/opencode/blob/v2.2.1/packages/schema/src/session-transfer.ts)
+and
+[session-message.ts](https://github.com/anomalyco/opencode/blob/v2.2.1/packages/schema/src/session-message.ts).
+
+The script outputs:
+
+- A Markdown transcript with only the visible user text and the visible
+  assistant text, plus a short summary of what was omitted.
+- Optional normalized JSON with `--json-out path.json`, where every kept
+  message keeps its position in the exported array as `source_index`.
+- Typed failure messages. Exit code 3 means the export was rejected, exit
+  code 4 means an output file could not be written. A failure message names
+  the position of the offending record and the supported kinds; it never
+  repeats a value that came out of the export.
+
+The converter parses and filters the export file that is already on disk. The
+output is a **filtered conversation view**: it is not a full archive and it is
+not secret redaction, and it is not a safe-to-publish artifact. The visible
+text is kept exactly as the export wrote it, so a secret that was part of the
+visible text stays in the text. Tool calls, reasoning, system, skill, shell,
+compaction and idle messages, agent/model/location switches, and attachment
+names, paths and contents are left out and only counted. Review the result
+before sharing it.
+
+A raw export contains private content. When the export was written with the
+native `--sanitize` option, the visible text is masked and the file holds
+placeholders instead of the real messages; the converter keeps those
+placeholders and cannot recover the original text.
+
+### Route 2: saved share page (legacy HTML)
+
+Use this only when the user gives you a saved share page file, or a share URL
+that still answers. Share URL examples are historical compatibility only, and
+a defunct link should not be retried.
 
 ```powershell
 python "$env:USERPROFILE\.codex\skills\opencode-share\scripts\extract_opencode_share.py" ".\share.html" --out ".\opencode-clean.md"
 ```
 
-From a share URL (historical compatibility only):
-
-```powershell
-python "$env:USERPROFILE\.codex\skills\opencode-share\scripts\extract_opencode_share.py" "https://opncd.ai/share/SHARE_ID" --out ".\opencode-clean.md"
-```
-
-The parser also accepts `https://opencode.ai/s/SHARE_ID` and rewrites it to the
-`opncd.ai/share/SHARE_ID` form before fetching.
-
-The script outputs:
-
-- A clean Markdown transcript containing only user visible text and assistant visible text.
-- Optional JSON with `--json-out path.json`.
-- Session metadata, transcript counts, and typed failure messages.
+The parser also accepts `https://opencode.ai/s/SHARE_ID` and rewrites it to
+the `opncd.ai/share/SHARE_ID` form before fetching. Exit code 2 is a
+fetch/read failure, 3 is missing share data, and 4 is an empty visible
+transcript.
 
 ## Summarizing
 
-After extraction, read the generated Markdown and produce the user-requested artifact:
+After extraction, read the generated Markdown and produce the user-requested
+artifact:
 
-- For "summarize": provide a concise Chinese summary of the task, decisions, results, and any unresolved next steps.
-- For handoff or continuation requests: identify the latest user intent, current state, files or URLs mentioned, and the next concrete action.
-- For requests to show only effective messages: return or reference the clean Markdown transcript.
+- For "summarize": provide a concise Chinese summary of the task, decisions,
+  results, and any unresolved next steps.
+- For handoff or continuation requests: identify the latest user intent,
+  current state, files or URLs mentioned, and the next concrete action.
+- For requests to show only effective messages: return or reference the clean
+  Markdown transcript.
 
-Do not include assistant reasoning parts, tool outputs, token/cost data, hidden IDs, model metadata, or large raw HTML fragments unless the user explicitly asks for forensic details.
+Do not include assistant reasoning parts, tool outputs, token/cost data,
+hidden IDs, model metadata, or large raw file fragments unless the user
+explicitly asks for forensic details.
 
 ## Notes
 
-- OpenCode share pages often embed session data in one large script line with `$R[...]` references. The parser reconstructs message order, role, and visible `type:"text"` parts.
-- The parser reads saved share HTML. It does not read the JSON export of OpenCode v2.2.1.
-- The parser reads the script elements of a saved page. Input that does not start like markup is read as a raw serialized fragment.
-- Some shared pages expose only public share data. If requested content was never included in the share HTML or requires authentication, state that limitation clearly.
-- Treat exit code 2 as fetch/read failure, 3 as missing share data, and 4 as empty visible transcript.
+- Use the JSON route for any export file. The legacy HTML parser does not
+  read the JSON export, and the JSON converter does not read saved share
+  pages.
+- The converter never overwrites the export or an existing output file, and
+  it creates no output file when the export is rejected.
+- Text is copied verbatim: Unicode, HTML entities, indentation and embedded
+  newlines are not touched.
+- Some sessions expose only public data. If requested content was never in
+  the export or requires authentication, state that limitation clearly.

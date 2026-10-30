@@ -1,4 +1,4 @@
 interface:
   display_name: "OpenCode Share"
-  short_description: "Parse saved legacy OpenCode share HTML."
-  default_prompt: "Analyze this saved OpenCode share HTML file and return the visible user/assistant conversation plus a concise summary."
+  short_description: "Read native OpenCode exports as filtered conversations."
+  default_prompt: "Parse this OpenCode session export (JSON) into a filtered conversation view: keep the visible user and assistant text exactly as it is, leave out tool calls, reasoning and session metadata, and summarize the effective exchange."
