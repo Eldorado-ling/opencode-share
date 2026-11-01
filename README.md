@@ -327,6 +327,11 @@ The test suite uses only the standard library:
 python -X utf8 -m unittest discover -s tests -v
 ```
 
+Continuous integration runs the same command on every pull request and on
+pushes to `main`, on Windows and Linux with Python 3.10 and 3.14. The jobs
+run tests with local synthetic fixtures; no real session histories or
+provider credentials are needed.
+
 ## Multi-agent installation
 
 Codex discovers skills under `.codex/skills`. Other tools may scan different
