@@ -25,12 +25,20 @@ the Python converter reads only the saved file and contacts no service.
 ### Step 1: export the session yourself
 
 Run this yourself, in the folder where you want the file. Replace
-`SESSION_ID` with the session you want to export. If the session lives on a
-remote OpenCode server, add the server address as `--server URL`.
+`SESSION_ID` with the session you want to export.
 
 ```powershell
-opencode session export SESSION_ID | Set-Content -Encoding utf8 session.json
+cmd /d /c "opencode session export SESSION_ID > session.json"
 ```
+
+This Windows command redirects the export as bytes and writes those bytes to
+the file unchanged, so the export keeps its UTF-8 encoding even when the
+PowerShell console uses another encoding.
+
+Choose a new output filename in place of `session.json` when you want to keep
+an export that is already there. If the session lives on a remote OpenCode
+server, add the server address inside the quoted command, after `SESSION_ID`,
+as `--server URL`.
 
 The raw export includes session metadata and projected message records, not
 just visible conversation text. It is not a database or event-history backup;
