@@ -1,7 +1,43 @@
 # OpenCode Share
 
-Parse an OpenCode session export that is already on your disk into a readable,
-filtered conversation view.
+Turn a saved OpenCode JSON export into a conversation-only Markdown handoff.
+Keep the user/assistant text; leave out tool logs, reasoning and session metadata.
+Conversion runs offline with Python 3.10+ and no third-party packages.
+
+## Try the bundled example
+
+1. [Download the preview ZIP](https://github.com/Eldorado-ling/opencode-share/releases/download/v0.1.0-preview.2/opencode-share-v0.1.0-preview.2.zip) and unzip it.
+2. Open the folder containing `scripts/` and `examples/`, then run:
+
+```sh
+python scripts/extract_opencode_export.py examples/opencode-v2.synthetic.json
+```
+
+Use `python3` if that is the name of your Python 3.10+ interpreter.
+The bundled data is invented; no account, API key or real conversation is needed.
+
+| Input | Result |
+| --- | --- |
+| Four synthetic message records, including system and compaction records | Two readable user/assistant messages |
+| Assistant reasoning and tool blocks | Omitted, with counts in the summary |
+| Session identity and project metadata | Omitted from the conversation view |
+
+For a JSON export you already have:
+
+```sh
+python scripts/extract_opencode_export.py session.json --out conversation.md
+```
+
+Use this when you have a saved, supported export and want text to review or
+paste into a handoff without running the original server. If the native TUI's
+Markdown export already fits your workflow, use that. This converter does not
+add an export option to the desktop app or recover missing source messages.
+
+Visible-text secrets stay in the output: review it before sharing. Keep the
+original JSON for re-import; the filtered Markdown/JSON is not an importable backup.
+See [the exact output and filtering rules](#what-the-converter-produces) below.
+
+## Supported inputs
 
 Two input routes are supported:
 
